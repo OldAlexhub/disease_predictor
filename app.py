@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import joblib
 from sklearn.ensemble import RandomForestClassifier
+import re
 
 # Load assets
 rfModel = joblib.load('rf_model.pkl')
@@ -12,7 +13,7 @@ all_symptoms = data.drop(columns=['prognosis', 'Unnamed: 133'], errors='ignore')
 # --- Page Config ---
 st.set_page_config(page_title="AI Disease Predictor", page_icon="🧠", layout="wide")
 
-# --- Header ---
+# --- Style ---
 st.markdown("""
     <style>
     .main {
@@ -33,6 +34,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- Header ---
 st.markdown("# 🧠 AI-Powered Disease Predictor")
 st.markdown("Use intelligent symptom analysis to identify likely diseases and get expert-based treatment recommendations.")
 
@@ -49,6 +51,12 @@ for i, symptom in enumerate(all_symptoms):
 def create_input_vector(selected_symptoms, all_symptoms):
     return [1 if symptom in selected_symptoms else 0 for symptom in all_symptoms]
 
+def clean_disease_name(name):
+    name = re.sub(r'\(.*?\)', '', name)  # remove anything in parentheses
+    name = re.sub(r'[^a-zA-Z0-9\s]', '', name)  # remove punctuation
+    name = name.strip().replace(" ", "+")
+    return name.lower()
+
 # --- Predict Button ---
 if st.button("🔍 Analyze Symptoms & Predict"):
     if not selected_symptoms:
@@ -59,7 +67,7 @@ if st.button("🔍 Analyze Symptoms & Predict"):
         
         st.markdown("---")
         st.success(f"### 🩺 Diagnosis Suggestion: **{prediction}**")
-        
+
         # Retrieve extended info
         match = data_symptoms[data_symptoms['Name'].str.contains(prediction, case=False, na=False)]
         if not match.empty:
@@ -72,11 +80,13 @@ if st.button("🔍 Analyze Symptoms & Predict"):
             with st.expander("💊 View Recommended Treatments"):
                 st.markdown(f"<div style='line-height: 1.8;'>{treatments_text}</div>", unsafe_allow_html=True)
 
-            # Optional: Show external resources
-            st.markdown("### 🌐 Additional Resources")
-            search_url = f"https://www.mayoclinic.org/search/search-results?q={prediction.replace(' ', '+')}"
-            st.markdown(f"- [🔍 Learn more about **{prediction}**](https://en.wikipedia.org/wiki/{prediction.replace(' ', '_')})")
-            st.markdown(f"- [📚 Clinical Information – Mayo Clinic]({search_url})")
+            # External resources
+            query = clean_disease_name(prediction)
+            wiki_url = f"https://en.wikipedia.org/wiki/{query.replace('+', '_').title()}"
+            mayo_url = f"https://www.mayoclinic.org/search/search-results?q={query}"
 
+            st.markdown("### 🌐 Additional Resources")
+            st.markdown(f"- [🔍 Learn more on **Wikipedia**]({wiki_url})")
+            st.markdown(f"- [📚 Explore clinical info on **Mayo Clinic**]({mayo_url})")
         else:
             st.warning("No additional information found for this disease.")

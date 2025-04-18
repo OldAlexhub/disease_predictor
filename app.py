@@ -3,12 +3,19 @@ import pandas as pd
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 import re
+from datetime import datetime
+import os
 
-# Load assets
+# --- Load assets ---
 rfModel = joblib.load('rf_model.pkl')
 data = pd.read_csv('training_data.csv')
 data_symptoms = pd.read_csv('Diseases_Symptoms.csv')
 all_symptoms = data.drop(columns=['prognosis', 'Unnamed: 133'], errors='ignore').columns.tolist()
+
+# Prepare X_train and y_train for training accuracy and drift calculation
+X_train = data.drop(columns=['prognosis', 'Unnamed: 133'], errors='ignore')
+y_train = data['prognosis']
+training_avg_symptoms = X_train.sum(axis=1).mean()
 
 # --- Page Config ---
 st.set_page_config(page_title="AI Disease Predictor", page_icon="🧠", layout="wide")
@@ -34,6 +41,35 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- Monitoring Functions ---
+def log_prediction(selected_symptoms, prediction, confidence):
+    log_entry = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "symptoms_selected": len(selected_symptoms),
+        "prediction": prediction,
+        "confidence": confidence
+    }
+    log_df = pd.DataFrame([log_entry])
+    if not os.path.isfile('monitoring_log.csv'):
+        log_df.to_csv('monitoring_log.csv', index=False)
+    else:
+        log_df.to_csv('monitoring_log.csv', mode='a', header=False, index=False)
+
+def simple_drift_check(selected_symptoms, training_avg_symptoms):
+    current_symptoms_count = len(selected_symptoms)
+    if abs(current_symptoms_count - training_avg_symptoms) > (0.5 * training_avg_symptoms):
+        st.warning("⚠️ Symptom selection pattern looks unusual compared to training data. Possible data drift.")
+
+# --- Helper Functions ---
+def create_input_vector(selected_symptoms, all_symptoms):
+    return [1 if symptom in selected_symptoms else 0 for symptom in all_symptoms]
+
+def clean_disease_name(name):
+    name = re.sub(r'\(.*?\)', '', name)  # remove anything in parentheses
+    name = re.sub(r'[^a-zA-Z0-9\s]', '', name)  # remove punctuation
+    name = name.strip().replace(" ", "+")
+    return name.lower()
+
 # --- Header ---
 st.markdown("# 🧠 AI-Powered Disease Predictor")
 st.markdown("Use intelligent symptom analysis to identify likely diseases and get expert-based treatment recommendations.")
@@ -47,26 +83,32 @@ for i, symptom in enumerate(all_symptoms):
     if cols[i % 4].checkbox(label):
         selected_symptoms.append(symptom)
 
-# --- Prediction Logic ---
-def create_input_vector(selected_symptoms, all_symptoms):
-    return [1 if symptom in selected_symptoms else 0 for symptom in all_symptoms]
-
-def clean_disease_name(name):
-    name = re.sub(r'\(.*?\)', '', name)  # remove anything in parentheses
-    name = re.sub(r'[^a-zA-Z0-9\s]', '', name)  # remove punctuation
-    name = name.strip().replace(" ", "+")
-    return name.lower()
-
 # --- Predict Button ---
 if st.button("🔍 Analyze Symptoms & Predict"):
     if not selected_symptoms:
         st.warning("Please select at least one symptom to continue.")
     else:
         user_input = create_input_vector(selected_symptoms, all_symptoms)
-        prediction = rfModel.predict([user_input])[0]
         
+        # Predict
+        prediction = rfModel.predict([user_input])[0]
+        prediction_proba = rfModel.predict_proba([user_input])[0]
+        confidence = prediction_proba.max() * 100  # highest probability
+
+        # Training accuracy
+        training_accuracy = rfModel.score(X_train, y_train) * 100
+
+        # Log prediction
+        log_prediction(selected_symptoms, prediction, confidence)
+
+        # Check for simple drift
+        simple_drift_check(selected_symptoms, training_avg_symptoms)
+
+        # --- Display Results ---
         st.markdown("---")
         st.success(f"### 🩺 Diagnosis Suggestion: **{prediction}**")
+        st.info(f"**Confidence:** {confidence:.2f}%")
+        st.info(f"**Model Training Accuracy:** {training_accuracy:.2f}%")
 
         # Retrieve extended info
         match = data_symptoms[data_symptoms['Name'].str.contains(prediction, case=False, na=False)]

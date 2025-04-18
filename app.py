@@ -159,7 +159,7 @@ elif page == "Monitoring Dashboard":
     if os.path.exists('monitoring_log.csv'):
         monitor_data = pd.read_csv('monitoring_log.csv')
 
-        st.subheader("🕓 Prediction Activity Over Time")
+        st.subheader("🕓 Prediction Confidence Over Time")
         st.line_chart(monitor_data.set_index('timestamp')['confidence'])
 
         st.subheader("🩺 Symptom Selection Trend")
